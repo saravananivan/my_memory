@@ -1,5 +1,7 @@
 package com.example.bullseye
 
+import android.app.Activity
+import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
@@ -17,9 +19,14 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.vectordrawable.graphics.drawable.ArgbEvaluator
 import com.example.bullseye.models.BoardSize
 import com.example.bullseye.models.MemoryGame
-import com.google.android.material.datepicker.MaterialPickerOnPositiveButtonClickListener
+import com.example.bullseye.models.UserImageList
+import com.example.bullseye.utils.EXTRA_BOARD_SIZE
+import com.example.bullseye.utils.EXTRA_GAME_NAME
 import com.google.android.material.snackbar.Snackbar
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
 
+//https://www.youtube.com/watch?v=C2DBDZKkLss
 class MainActivity : AppCompatActivity() {
     private lateinit var clRoot: ConstraintLayout
     private lateinit var adapter: MemoryBoardAdapter
@@ -30,8 +37,13 @@ class MainActivity : AppCompatActivity() {
 
     private  var boardSize = BoardSize.EASY
 
+    private val db = Firebase.firestore
+    private var gameName: String? = null
+    private var customGameImages : List<String>? = null
+
     companion object{
         private const val TAG = "MainActivity"
+        private const val CREATE_REQUEST_CODE = 278
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +53,10 @@ class MainActivity : AppCompatActivity() {
         rvBoard = findViewById(R.id.rvBoard)
        tvNumMoves = findViewById(R.id.tvNumMoves)
         tvNumPairs = findViewById(R.id.tvNumPairs)
+
+//        val intent = Intent(this, CreateActivity::class.java)
+//        intent.putExtra(EXTRA_BOARD_SIZE, BoardSize.MEDIUM)
+//        startActivity(intent)
 
        setupBoard()
     }
@@ -70,8 +86,71 @@ class MainActivity : AppCompatActivity() {
                showNewSizeDialog()
                return true
            }
+
+           R.id.mi_custom -> {
+               showCreationDialog()
+               return true
+           }
        }
         return super.onOptionsItemSelected(item)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == CREATE_REQUEST_CODE && resultCode == Activity.RESULT_OK){
+            val customGameName = data?.getStringExtra(EXTRA_GAME_NAME)
+            if(customGameName == null){
+                Log.e(TAG, "Got null for customGameName from CreateActivity")
+                return 
+            }
+            downloadGame(customGameName)
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun downloadGame(customGameName: String) {
+
+    db.collection("games").document(customGameName).get().addOnSuccessListener { document ->
+        val userImageList = document.toObject(UserImageList::class.java)
+        if (userImageList?.images == null ){
+            Log.e(TAG, "Invalid custom game data from firestore")
+            Snackbar.make(clRoot, "Sorry we couldn't find any such game $customGameName", Snackbar.LENGTH_LONG ).show()
+            return@addOnSuccessListener
+        }
+        val numCards = userImageList.images.size * 2
+        boardSize = BoardSize.getByValue(numCards)
+        customGameImages = userImageList.images
+        gameName = customGameName
+        setupBoard()
+
+    }.addOnFailureListener{exception ->
+        Log.e(TAG, "Exception when retrieving game", exception)
+    }
+
+
+    }
+
+    private fun showCreationDialog() {
+        val boardSizeView = LayoutInflater.from(this).inflate(R.layout.dailog_board_size, null)
+        val radioGroupSize = boardSizeView.findViewById<RadioGroup>(R.id.radioGroup)
+//        when (boardSize){
+//            BoardSize.EASY -> radioGroupSize.check(R.id.rbEasy)
+//            BoardSize.MEDIUM -> radioGroupSize.check(R.id.rbMedium)
+//            BoardSize.HARD -> radioGroupSize.check(R.id.rbHard)
+//        }
+        showAlertDialog("Create your own memory board", boardSizeView, View.OnClickListener {
+            val desiredBoardSize = when (radioGroupSize.checkedRadioButtonId) {
+                R.id.rbEasy -> BoardSize.EASY
+                R.id.rbMedium -> BoardSize.MEDIUM
+
+                else -> BoardSize.HARD
+            }
+
+           // setupBoard()
+            // Navigate to new activity
+            val intent = Intent(this, CreateActivity::class.java)
+            intent.putExtra(EXTRA_BOARD_SIZE, desiredBoardSize)
+            startActivityForResult(intent, CREATE_REQUEST_CODE)
+        })
     }
 
     private fun showNewSizeDialog() {
@@ -121,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         }
         tvNumPairs.setTextColor(ContextCompat.getColor(this, R.color.progress_none))
 
-        memoryGame = MemoryGame(boardSize)
+        memoryGame = MemoryGame(boardSize, customGameImages)
 
         adapter = MemoryBoardAdapter(this, boardSize, memoryGame.cards, object: MemoryBoardAdapter.CardClickListener{
             override fun onCardClicked(position: Int) {
