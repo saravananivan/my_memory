@@ -55,7 +55,7 @@ class MemoryBoardAdapter(
             val card = cards[position]
             if (card.isFaceUp){
                 if (card.imageUrl != null){
-                    Picasso.get().load(card.imageUrl).into(imageButton)
+                    Picasso.get().load(card.imageUrl).placeholder(R.drawable.ic_image).into(imageButton)
                 }else{
                     imageButton.setImageResource(card.identifier)
 

@@ -2,6 +2,7 @@ package com.example.bullseye
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
@@ -9,10 +10,12 @@ import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.widget.EditText
 import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -22,13 +25,15 @@ import com.example.bullseye.models.MemoryGame
 import com.example.bullseye.models.UserImageList
 import com.example.bullseye.utils.EXTRA_BOARD_SIZE
 import com.example.bullseye.utils.EXTRA_GAME_NAME
+import com.github.jinatonic.confetti.CommonConfetti
 import com.google.android.material.snackbar.Snackbar
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
+import com.squareup.picasso.Picasso
 
 //https://www.youtube.com/watch?v=C2DBDZKkLss
 class MainActivity : AppCompatActivity() {
-    private lateinit var clRoot: ConstraintLayout
+    private lateinit var clRoot: CoordinatorLayout
     private lateinit var adapter: MemoryBoardAdapter
     private lateinit var memoryGame: MemoryGame
     private lateinit var rvBoard :RecyclerView
@@ -91,8 +96,21 @@ class MainActivity : AppCompatActivity() {
                showCreationDialog()
                return true
            }
+           R.id.mi_download -> {
+               showDownloadDialog()
+               return true
+           }
        }
         return super.onOptionsItemSelected(item)
+    }
+
+    private fun showDownloadDialog() {
+        val boardDowloadView  = LayoutInflater.from(this).inflate(R.layout.dialog_dowload_board, null)
+        showAlertDialog("Fetch memory game", boardDowloadView, View.OnClickListener {
+            val etDownloadGame = boardDowloadView.findViewById<EditText>(R.id.etDownloadGame)
+            val gameDownload = etDownloadGame.text.toString().trim()
+            downloadGame(gameDownload)
+        })
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -108,8 +126,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadGame(customGameName: String) {
-
-    db.collection("games").document(customGameName).get().addOnSuccessListener { document ->
+    db.collection("games").document(customGameName.replace("/","_")).get().addOnSuccessListener { document ->
         val userImageList = document.toObject(UserImageList::class.java)
         if (userImageList?.images == null ){
             Log.e(TAG, "Invalid custom game data from firestore")
@@ -120,6 +137,11 @@ class MainActivity : AppCompatActivity() {
         boardSize = BoardSize.getByValue(numCards)
         customGameImages = userImageList.images
         gameName = customGameName
+
+        for (imageUrl in userImageList.images){
+            Picasso.get().load(imageUrl).fetch()
+        }
+        Snackbar.make(clRoot, "You are now playing $customGameName", Snackbar.LENGTH_LONG).show()
         setupBoard()
 
     }.addOnFailureListener{exception ->
@@ -168,6 +190,8 @@ class MainActivity : AppCompatActivity() {
 
                 else -> BoardSize.HARD
             }
+            gameName = null
+            customGameImages = null
 
             setupBoard()
         })
@@ -184,6 +208,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBoard() {
+        supportActionBar?.title = gameName ?: getString(R.string.app_name)
         when(boardSize){
             BoardSize.EASY -> {
                 tvNumMoves.text = "Easy 4 x 2"
@@ -232,6 +257,7 @@ class MainActivity : AppCompatActivity() {
            tvNumPairs.text = "Pairs: ${memoryGame.numPairsFound} / ${boardSize.getNumPairs()}"
            if (memoryGame.haveWonGame()){
                Snackbar.make(clRoot, "You won congratulation!", Snackbar.LENGTH_LONG).show()
+               CommonConfetti.rainingConfetti(clRoot, intArrayOf(Color.YELLOW, Color.GREEN, Color.RED) ).oneShot()
            }
        }
        tvNumMoves.text = "Moves: ${memoryGame.getNumMoves()}"
